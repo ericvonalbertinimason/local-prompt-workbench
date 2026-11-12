@@ -1,0 +1,22 @@
+services:
+  prompt-optimizer:
+    image: linshen/prompt-optimizer@sha256:525c35a8a8a82a990b75bb4ee22368d9755255d608eb0a78b70c32b6671bab25
+    container_name: prompt-optimizer
+    restart: always
+    ports:
+      - "127.0.0.1:8081:80"
+    # Docker keeps container logs forever unless capped (2026-10-28): 3 x 10 MB at most.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      VITE_CUSTOM_API_KEY_local_optimizer: ollama
+      VITE_CUSTOM_API_BASE_URL_local_optimizer: http://host.docker.internal:11434/v1
+      VITE_CUSTOM_API_MODEL_local_optimizer: ${PIPELINE_MODEL:-qwen3.5-assistant-fast:4b}
+      VITE_CUSTOM_API_PARAMS_local_optimizer: '{"reasoning_effort":"none","temperature":0.2}'
+      MCP_DEFAULT_MODEL_PROVIDER: custom_local_optimizer
+      MCP_DEFAULT_LANGUAGE: en
+      MCP_LOG_LEVEL: info
+

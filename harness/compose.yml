@@ -1,0 +1,52 @@
+services:
+  workbench:
+    build: .
+    container_name: prompt-workbench
+    restart: always
+    ports:
+      - "127.0.0.1:8789:8789"
+    # Docker keeps container logs forever unless capped (2026-10-28): 3 x 10 MB at most.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Marks the container unhealthy in Docker Desktop if the page stops answering (cheap: a static file).
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8789/manifest.webmanifest', timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    environment:
+      HARNESS_DATA: /data
+      # Reported by /api/status. Keep in step with the optimizer compose file.
+      ASSISTANT_MODEL: ${PIPELINE_MODEL:-qwen3.5-assistant-fast:4b}
+      OPTIMIZER_MODEL: ${PIPELINE_MODEL:-qwen3.5-assistant-fast:4b}
+      NUM_CTX: "65536"
+      NUM_PREDICT: "8192"
+      # Content judge: validated 2026-09-27 (bench/judge_eval.py). Set to "off" to disable.
+      QA_JUDGE: "on"
+      # native (harness/pipeline.py). n8n was retired on 2026-10-28: PIPELINE=n8n also needs the n8n
+      # container and the n8n_data mount back (README.md "n8n retired"). OPTIMIZER=off skips the
+      # optimizer stage; it stays on because it adds ~10 points on real requests (2026-10-28 A/B).
+      PIPELINE: ${PIPELINE:-native}
+      # Optional API model for drafting (native pipeline). ollama = local only (default).
+      # anthropic | openai: put the key in harness/data/api-key.txt (never in git); if the
+      # API call fails for any reason the local model answers instead.
+      # Empty = the local engine below.
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-}
+      # Local engine: ollama (default) or llamacpp = llama-server on the host (bench/llama_server.ps1);
+      # if llama-server is not running, Ollama answers.
+      LOCAL_ENGINE: ${LOCAL_ENGINE:-ollama}
+      ENGINE_URL: ${ENGINE_URL:-http://host.docker.internal:8090/v1/chat/completions}
+      CHAT_URL: ${CHAT_URL-http://host.docker.internal:8791}   # Chat tab -> chat/web.py on the host; empty hides it
+      DRAFT_MODEL: ${DRAFT_MODEL:-}
+      API_KEY_FILE: /data/api-key.txt
+      OPTIMIZER: ${OPTIMIZER:-on}
+      # light (default): short optimizer draft for system requests (1-3 s); full: the old system template (~12 s).
+      SYSTEM_OPTIMIZER: ${SYSTEM_OPTIMIZER:-light}
+      # Your own devices reach the page through `tailscale serve` (README.md "Remote access").
+      TAILNET_HOSTS: ${TAILNET_HOSTS:-}
+    volumes:
+      - ./data:/data

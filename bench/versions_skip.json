@@ -1,0 +1,5 @@
+{
+ "prompt-optimizer": {
+  "2.11.12": "desktop-app-only change (model network/proxy settings); the Docker image the workbench runs is unaffected"
+ }
+}

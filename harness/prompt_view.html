@@ -1,0 +1,151 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>Prompt</title>
+<!-- MCP App view for create_prompt (2026-11-07). Shown by the Claude desktop app next to the tool
+     result: the prompt, its QA line, Copy, and Pin (calls pin_prompt through the host). Protocol:
+     MCP Apps 2026-01-26 (github.com/modelcontextprotocol/ext-apps). Self-contained: no network. -->
+<style>
+  html, body { margin: 0; background: transparent; }
+  body { padding: 4px 2px 8px; font: 14px/1.4 var(--font-sans, system-ui, sans-serif);
+         color: var(--color-text-primary, CanvasText); }
+  .line { margin: 0 0 4px; font-size: 12px; white-space: pre-wrap; color: var(--color-text-secondary, GrayText); }
+  .ok  { color: var(--color-text-success, #265b19); }
+  .bad { color: var(--color-text-danger, #a73d39); }
+  pre { margin: 6px 0 8px; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto;
+        font: 13px/1.45 var(--font-mono, ui-monospace, monospace);
+        border: 1px solid var(--color-border-tertiary, #8884); border-radius: var(--border-radius-md, 8px); }
+  button { font: inherit; min-height: 32px; padding: 4px 14px; cursor: pointer; color: inherit;
+           background: var(--color-background-secondary, transparent);
+           border: 1px solid var(--color-border-primary, #8888); border-radius: var(--border-radius-md, 8px); }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { margin-left: 8px; font-size: 12px; color: var(--color-text-secondary, GrayText); }
+</style>
+</head>
+<body>
+<p class="line" id="head">Writing the prompt…</p>
+<p class="line" id="extra" hidden></p>
+<pre id="text" hidden></pre>
+<div><button id="copy" disabled>Copy</button> <button id="pin" disabled>Pin</button><span id="status"></span></div>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var nextId = 1, pending = {}, runId = null, copyText = '';
+
+  // JSON-RPC 2.0 messages to the host over postMessage.
+  function post(m) { m.jsonrpc = '2.0'; window.parent.postMessage(m, '*'); }
+  function request(method, params) {
+    return new Promise(function (resolve, reject) {
+      var id = nextId++; pending[id] = { resolve: resolve, reject: reject };
+      post({ id: id, method: method, params: params });
+    });
+  }
+  function notify(method, params) { var m = { method: method }; if (params) m.params = params; post(m); }
+  function status(t) { $('status').textContent = t; }
+
+  function applyContext(ctx) {
+    if (!ctx) return;
+    var root = document.documentElement;
+    if (ctx.theme) root.style.colorScheme = ctx.theme;
+    var v = ctx.styles && ctx.styles.variables;
+    if (v) Object.keys(v).forEach(function (k) { if (v[k]) root.style.setProperty(k, v[k]); });
+  }
+
+  // The create_prompt text: "run <id> | <QA verdict>[ | runs in X]", optional lines, "---", the prompt.
+  function render(result) {
+    var text = ((result && result.content) || []).filter(function (c) { return c.type === 'text'; })
+                 .map(function (c) { return c.text; }).join('\n');
+    var cut = text.indexOf('\n---\n');
+    var header = (cut >= 0 ? text.slice(0, cut) : text).split('\n');
+    var first = header[0] || '(empty result)';
+    var m = /^run ([0-9a-f]{8})/i.exec(first);
+    runId = m ? m[1] : null;
+    var body = cut >= 0 ? text.slice(cut + 5) : header.slice(1).join('\n');
+    copyText = cut >= 0 ? body : text;
+    $('head').textContent = first;
+    $('head').className = 'line ' + ((result && result.isError) || /QA FLAGGED|: error:/.test(first) ? 'bad'
+                                     : /QA passed/.test(first) ? 'ok' : '');
+    var extra = cut >= 0 ? header.slice(1).join('\n') : '';
+    $('extra').hidden = !extra; $('extra').textContent = extra;
+    $('text').hidden = !body; $('text').textContent = body;
+    $('copy').disabled = !copyText;
+    $('pin').disabled = !(runId && cut >= 0);          // only finished single prompts can be pinned
+    status('');
+  }
+
+  // Clipboard access is optional for hosts: fall back to execCommand, then to selecting the text.
+  function copy() {
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = copyText; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+      ta.remove();
+      if (ok) return status('Copied');
+      var r = document.createRange(); r.selectNodeContents($('text').hidden ? $('head') : $('text'));
+      var s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      status('Clipboard blocked: text selected, press Ctrl+C');
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(copyText).then(function () { status('Copied'); }, fallback);
+    } else fallback();
+  }
+  $('copy').onclick = copy;
+
+  // Pin goes through the host, which forwards tools/call to this server (it may ask the user first).
+  $('pin').onclick = function () {
+    $('pin').disabled = true; status('Pinning…');
+    request('tools/call', { name: 'pin_prompt', arguments: { run_id: runId } }).then(function (r) {
+      var t = ((r && r.content) || []).map(function (c) { return c.text || ''; }).join(' ');
+      status(r && r.isError ? 'Pin failed: ' + t : (t || 'Pinned'));
+      if (r && r.isError) $('pin').disabled = false;
+    }, function (e) { status('Pin failed: ' + (e && e.message || e)); $('pin').disabled = false; });
+  };
+
+  window.addEventListener('message', function (e) {
+    if (e.source !== window.parent) return;
+    var msg = e.data;
+    if (!msg || msg.jsonrpc !== '2.0') return;
+    if (msg.id != null && !msg.method) {
+      var p = pending[msg.id]; if (!p) return; delete pending[msg.id];
+      return msg.error ? p.reject(new Error(msg.error.message)) : p.resolve(msg.result);
+    }
+    switch (msg.method) {
+      case 'ui/notifications/tool-input': $('head').textContent = 'Writing the prompt…'; break;
+      case 'ui/notifications/tool-result': render(msg.params); break;
+      case 'ui/notifications/tool-cancelled': $('head').textContent = 'Cancelled'; break;
+      case 'ui/notifications/host-context-changed': applyContext(msg.params); break;
+      case 'ui/resource-teardown': case 'ping': post({ id: msg.id, result: {} }); break;
+      default: if (msg.id != null) post({ id: msg.id, error: { code: -32601, message: 'Method not found' } });
+    }
+  });
+
+  // Report the content size so the host can fit the frame.
+  var last = '', queued = false;
+  function measure() {
+    queued = false;
+    var html = document.documentElement, prev = html.style.height;
+    html.style.height = 'max-content';
+    var h = Math.ceil(html.getBoundingClientRect().height);
+    html.style.height = prev;
+    var w = Math.ceil(window.innerWidth);
+    if (w + 'x' + h !== last) { last = w + 'x' + h; notify('ui/notifications/size-changed', { width: w, height: h }); }
+  }
+  function schedule() { if (!queued) { queued = true; requestAnimationFrame(measure); } }
+
+  request('ui/initialize', {
+    protocolVersion: '2026-01-26',
+    appInfo: { name: 'prompt-workbench-view', version: '1.0.0' },
+    appCapabilities: {}
+  }).then(function (r) {
+    applyContext(r && r.hostContext);
+    notify('ui/notifications/initialized');
+    var ro = new ResizeObserver(schedule);
+    ro.observe(document.documentElement); ro.observe(document.body); schedule();
+  }, function (e) { $('head').textContent = 'View not initialised: ' + (e && e.message || e); });
+})();
+</script>
+</body>
+</html>

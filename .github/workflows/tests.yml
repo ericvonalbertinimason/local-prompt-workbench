@@ -1,0 +1,42 @@
+# Checks that need no Docker, GPU or model: the QA rules (loaded from harness/server.py itself),
+# Python/JavaScript syntax, and the backspace corruption that once disabled a safety regex.
+# The live quality gate (bench/eval.py) still runs on the PC, where the stack is.
+name: tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: No backspace characters in code (heredoc corruption guard)
+        run: |
+          if grep -rlP '\x08' --include='*.py' --include='*.js' --include='*.sh' --include='*.ps1' .; then
+            echo "Found backspace characters (a corrupted regex?)"; exit 1; fi
+      - name: Python syntax
+        run: python -m py_compile harness/*.py harness/core/*.py bench/*.py
+      - name: JavaScript syntax
+        run: |
+          node --check harness/static/app.js
+          node --check harness/static/theme.js
+      - name: QA rules
+        run: python bench/test_qa.py
+      - name: Saved test inputs
+        run: python bench/test_try_inputs.py
+      - name: Saved library
+        run: python bench/test_saved_library.py
+      - name: Try it judge
+        run: python bench/test_try_judge.py
+      - name: Files from Claude
+        run: python bench/test_source_files.py

@@ -1,0 +1,30 @@
+# Runtime data: run history (your prompts), the Action gateway credential, tunnel URL.
+harness/data/
+
+# Has its own git repository and a .env.local with deployment secrets.
+sites-workbench/
+
+# Third-party clone (prompt-optimizer) with its own history.
+work/
+
+# Scratch output from benchmarks: copies of the history DB, raw model outputs.
+bench/_work/
+
+# Build copies and generated artifacts.
+outputs/*.tar.gz
+__pycache__/
+*.pyc
+node_modules/
+dist/
+.next/
+
+# Never commit credentials, wherever they end up.
+*.env
+.env*
+*action-key*
+backups/
+
+# Tray app private environment
+tray/.venv/
+models/
+chat/data/
