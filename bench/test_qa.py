@@ -34,6 +34,7 @@ def passed(r, p):
 
 SYLLABUS = ('ACCT 210 Intermediate Accounting I - Prof. Adaeze Okafor. Midterm October 14, final December 9. '
             'No late work accepted. Office hours Wednesdays 2-4pm, Room B214. Textbook: Kieso 18th edition.')
+DOC = ''.join('Fact %d: the deadline for part %d is week %d of term. ' % (i, i, i) for i in range(300))
 CASES = [
     # Retry guards
     ('library command is never retried', bool(LIB.search('save this prompt to my library')), True),
@@ -143,6 +144,9 @@ CASES += [
     ('limits: a limit in neither request nor material is invented', passed(row('Write the case dialogue prompt', 'Roles: six named people.'), prompt('Write the dialogue in no more than 900 words.')), False),
     ('self-check: an explicit request to delete it overrides the default', bool(ns['MINIMAL_REQUEST'].search("(4) Delete the final '**Self-Check:** ...' paragraph")), True),
     ('self-check: asking to add one keeps the default', bool(ns['MINIMAL_REQUEST'].search('Add a self-check at the end')), False),
+    ('pasted: whole material dumped into the prompt is caught', ns['pasted_wholesale'](DOC, 'Use this: ' + DOC, 'Write a prompt for this'), True),
+    ('pasted: quoting the lists the user asked to keep is allowed', ns['pasted_wholesale'](DOC, 'Objections: ' + DOC[:2000], 'Write a prompt; address the objections'), False),
+    ('pasted: an explicit verbatim request is allowed', ns['pasted_wholesale'](DOC, DOC, 'Keep every line verbatim'), False),
     ('repair: invented slots become labels, own ones kept', repair('Dear {{hiring_manager_name}}, re {{topic}}', ['{{hiring_manager_name}}']), 'Dear [hiring manager name], re {{topic}}'),
 ]
 

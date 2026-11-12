@@ -359,6 +359,22 @@ QA_CONTRACT_NOTE = ('Your previous reply could not be used: it was not one valid
                     'Return exactly one JSON object with the keys kind, questions and result, and nothing else.')
 
 
+KEEP_EXACT = re.compile(r'\b(verbatim|word[- ]for[- ]word|exactly as (written|given)|keep (all|every|each)|'
+                        r'quote|copy (it|them|this))\b', re.I)
+
+
+def pasted_wholesale(material, result, request=''):
+    """The material dumped into the prompt: at least half of its 300-character stretches appear
+    verbatim. Quoting the parts a request names (an objection list, case numbers) stays allowed,
+    and a request that asks to keep or quote text exactly is never flagged. (2026-11-11: the
+    first version flagged any one stretch, which hit a run that did what the user asked.)"""
+    if len(material) <= 600 or KEEP_EXACT.search(request or ''):
+        return False
+    starts = range(0, len(material) - 300, 150)
+    copied = sum(material[i:i + 300] in result for i in starts)
+    return copied >= 0.5 * len(starts)
+
+
 def qa_review(row, parsed, prefs=None):
     """Check one result against the rules the workbench promises."""
     source = '\n'.join(x for x in (row['context_prompt'], row['prompt'], row['requirements']) if x)
@@ -425,6 +441,11 @@ def qa_review(row, parsed, prefs=None):
                 check('source_facts_used', used >= max(2, round(FACT_MIN_SHARE * len(facts))) or marker,
                       'Build the prompt on the source material the user attached. It leaves out key facts '
                       'such as: %s.' % ', '.join(missing[:8]))
+        if len(material) > 600:
+            check('no_pasted_material', not pasted_wholesale(material, result, source),
+                  'Most of the source material was copied into the prompt. Refer to it instead (for example '
+                  '"the attached case") and write in only the facts the task needs; keep exact wording only '
+                  'where the user asked for it.')
         asked = source.replace(HARNESS_FOLLOWUP, '')
         if PROMPT_REQUEST.search(asked) and not PROMPT_TOPIC.search(asked):
             opening = ' '.join(result.split())[:70]

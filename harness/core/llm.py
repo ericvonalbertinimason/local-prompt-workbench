@@ -8,6 +8,7 @@ Settings (environment):
   DRAFT_MODEL / ENGINE_MODEL / ASSISTANT_MODEL   model names
   API_KEY_FILE    file holding the provider API key (never in git, logs or the browser); a file
                   api-key-<provider>.txt next to it wins for that provider (api-key-deepseek.txt)
+  API_EFFORT      low | medium | high: how much a Claude model thinks (empty = model default)
   OPENAI_BASE_URL any OpenAI-compatible chat endpoint for provider openai (default api.openai.com)
   API_PROVIDER    anthropic | openai     provider for a request with quality=api (default anthropic)
   SPEND_CAP_USD, PRICE_IN_USD, PRICE_OUT_USD, SPEND_FILE   the cost guard
@@ -88,11 +89,17 @@ def llm(system, user, schema=None, provider=None, model=None, timeout=1800):
                                          + json.dumps(schema))
     if provider == 'anthropic':
         model = model or os.environ.get('DRAFT_MODEL') or 'claude-haiku-5-5'
-        out, _ = post('https://api.anthropic.com/v1/messages',
-                      {'model': model, 'max_tokens': NUM_PREDICT, 'system': system + instruction,  # current models reject temperature
-                       'messages': [{'role': 'user', 'content': user}]}, timeout,
+        # Current Claude models reject temperature and think by default; thinking counts toward
+        # max_tokens, so leave room for it. API_EFFORT (low | medium | high) sets how much it thinks.
+        body = {'model': model, 'max_tokens': max(NUM_PREDICT, 32000), 'system': system + instruction,
+                'messages': [{'role': 'user', 'content': user}]}
+        if os.environ.get('API_EFFORT'):
+            body['output_config'] = {'effort': setting('API_EFFORT', 'medium')}
+        out, _ = post('https://api.anthropic.com/v1/messages', body, timeout,
                       {'x-api-key': key, 'anthropic-version': '2023-06-01'})
         text = ''.join(b.get('text', '') for b in out.get('content', []) if b.get('type') == 'text')
+        if out.get('stop_reason') in ('max_tokens', 'refusal') or not text.strip():
+            raise RuntimeError('API answer unusable (stop_reason %s)' % out.get('stop_reason'))
         u = out.get('usage', {})
         return text, {'input_tokens': u.get('input_tokens', 0), 'output_tokens': u.get('output_tokens', 0), 'model': model}
     if provider in ('openai', 'deepseek'):

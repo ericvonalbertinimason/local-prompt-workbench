@@ -42,6 +42,7 @@ services:
       ENGINE_URL: ${ENGINE_URL:-http://host.docker.internal:8090/v1/chat/completions}
       CHAT_URL: ${CHAT_URL-http://host.docker.internal:8791}   # Chat tab -> chat/web.py on the host; empty hides it
       DRAFT_MODEL: ${DRAFT_MODEL:-}
+      API_EFFORT: ${API_EFFORT:-}   # low | medium | high for Claude models (empty = model default, medium)
       API_KEY_FILE: /data/api-key.txt
       OPTIMIZER: ${OPTIMIZER:-on}
       # light (default): short optimizer draft for system requests (1-3 s); full: the old system template (~12 s).
